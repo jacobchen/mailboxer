@@ -32,16 +32,17 @@ class Mailboxer::Message < Mailboxer::Notification
     sender_receipt = build_receipt(sender, 'sentbox', true)
 
     temp_receipts << sender_receipt
+    ActiveRecord::Base.transaction do
+      if temp_receipts.all?(&:valid?)
+        temp_receipts.each(&:save!)
+        Mailboxer::MailDispatcher.new(self, recipients).call
 
-    if temp_receipts.all?(&:valid?)
-      temp_receipts.each(&:save!)
-      Mailboxer::MailDispatcher.new(self, recipients).call
+        conversation.touch if reply
 
-      conversation.touch if reply
+        self.recipients = nil
 
-      self.recipients = nil
-
-      on_deliver_callback.call(self) if on_deliver_callback
+        on_deliver_callback.call(self) if on_deliver_callback
+      end
     end
     sender_receipt
   end
